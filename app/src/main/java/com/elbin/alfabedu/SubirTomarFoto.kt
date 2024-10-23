@@ -1,14 +1,13 @@
-import android.Manifest
+package com.elbin.alfabedu.ui.theme
+
 import android.content.ContentValues
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -23,255 +22,178 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import org.tensorflow.lite.Interpreter
-import java.io.File
-import java.io.FileInputStream
-import java.io.IOException
 import java.nio.ByteBuffer
-import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.io.FileInputStream
+import java.nio.ByteOrder
 
 class SubirTomarFoto : ComponentActivity() {
     private lateinit var tflite: Interpreter
-    private val numClasses = 54
-
-    private val CAMERA_PERMISSION_CODE = 100
-    private val STORAGE_PERMISSION_CODE = 101
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (checkAndRequestPermissions()) {
-            loadModel()
-        }
         setContent {
             SeleccionarImagenDeGaleriaOTomarFoto()
         }
+        tflite = Interpreter(loadModelFile())
     }
 
-    // Verificar y solicitar permisos
-    private fun checkAndRequestPermissions(): Boolean {
-        val cameraPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-        val storagePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-
-        val listPermissionsNeeded = mutableListOf<String>()
-
-        if (cameraPermission != PackageManager.PERMISSION_GRANTED) {
-            listPermissionsNeeded.add(Manifest.permission.CAMERA)
-        }
-        if (storagePermission != PackageManager.PERMISSION_GRANTED) {
-            listPermissionsNeeded.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-
-        return if (listPermissionsNeeded.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, listPermissionsNeeded.toTypedArray(), CAMERA_PERMISSION_CODE)
-            false
-        } else {
-            true
-        }
+    private fun loadModelFile(): ByteBuffer {
+        val assetFileDescriptor = assets.openFd("modelo_letras_v2.0.tflite")
+        val inputStream = FileInputStream(assetFileDescriptor.fileDescriptor)
+        val fileChannel = inputStream.channel
+        val startOffset = assetFileDescriptor.startOffset
+        val declaredLength = assetFileDescriptor.declaredLength
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
-    // Cargar el modelo de TFLite
-    private fun loadModel() {
-        try {
-            val model = File(cacheDir, "modelo_letras.tflite")
-            FileInputStream(model).channel.use { fileChannel ->
-                val mappedByteBuffer: MappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
-                tflite = Interpreter(mappedByteBuffer)
-            }
-        } catch (e: IOException) {
-            Log.e("SubirTomarFoto", "Error loading model", e)
-        }
+    fun detectarLetra(bitmap: Bitmap): Int {
+        val inputData = prepareInputData(bitmap)
+        val outputData = Array(1) { FloatArray(54) } // Cambia esto según tu número de clases
+
+        tflite.run(inputData, outputData)
+
+        return outputData[0].indexOfMax()
     }
 
-    // Función Composable para seleccionar imágenes o tomar una foto
-    @Composable
-    fun SeleccionarImagenDeGaleriaOTomarFoto() {
-        var uriImagen by remember { mutableStateOf<Uri?>(null) }
-        var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-        var letraDetectada by remember { mutableStateOf("") }
-        val contexto = LocalContext.current
+    private fun prepareInputData(bitmap: Bitmap): ByteBuffer {
+        val inputSize = 64 // Tamaño de la entrada según tu modelo
+        val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+        byteBuffer.order(ByteOrder.nativeOrder())
 
-        // Lanzador para seleccionar imagen de la galería
-        val lanzadorGaleria = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            uriImagen = uri
-            if (uri != null) {
-                bitmap = loadBitmapFromUri(contexto, uri)
-            }
-        }
+        // Crear un bitmap mutable con configuración RGBA_F16
+        val mutableBitmap = bitmap.copy(Bitmap.Config.RGBA_F16, true)
+        val resizedBitmap = Bitmap.createScaledBitmap(mutableBitmap, inputSize, inputSize, true)
 
-        // Lanzador para tomar una foto
-        val lanzadorCamara = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.TakePicture()
-        ) { success: Boolean ->
-            if (success && uriImagen != null) {
-                bitmap = loadBitmapFromUri(contexto, uriImagen!!)
-            }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            bitmap?.let { bmp ->
-                Image(
-                    bitmap = bmp.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(400.dp)
-                        .padding(20.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(onClick = { lanzadorGaleria.launch("image/*") }) {
-                Text(text = "Seleccionar Imagen")
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(onClick = {
-                uriImagen = createTempImageUri(contexto)
-                lanzadorCamara.launch(uriImagen!!)
-            }) {
-                Text(text = "Tomar Foto")
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(onClick = {
-                letraDetectada = detectarLetra(bitmap)
-            }) {
-                Text(text = "Detectar Letra")
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(text = "Letra detectada: $letraDetectada")
-        }
-    }
-
-    // Función para cargar un bitmap desde un URI
-    private fun loadBitmapFromUri(context: Context, uri: Uri): Bitmap? {
-        return if (Build.VERSION.SDK_INT < 28) {
-            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-        } else {
-            val source = ImageDecoder.createSource(context.contentResolver, uri)
-            ImageDecoder.decodeBitmap(source)
-        }
-    }
-
-    // Función para detectar la letra
-    private fun detectarLetra(bitmap: Bitmap?): String {
-        if (bitmap == null) return ""
-
-        val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, true)
-        val byteBuffer = ByteBuffer.allocateDirect(4 * 64 * 64 * 3)
-        byteBuffer.rewind()
-
-        // Convertir el bitmap a ByteBuffer
-        for (y in 0 until resizedBitmap.height) {
-            for (x in 0 until resizedBitmap.width) {
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
                 val pixel = resizedBitmap.getPixel(x, y)
-                byteBuffer.putFloat((pixel shr 16 and 0xFF) / 255.0f)
-                byteBuffer.putFloat((pixel shr 8 and 0xFF) / 255.0f)
-                byteBuffer.putFloat((pixel and 0xFF) / 255.0f)
+                val r = (pixel shr 16 and 0xFF) / 255.0f
+                val g = (pixel shr 8 and 0xFF) / 255.0f
+                val b = (pixel and 0xFF) / 255.0f
+
+                byteBuffer.putFloat(r)
+                byteBuffer.putFloat(g)
+                byteBuffer.putFloat(b)
             }
         }
 
-        val inputArray = arrayOf(byteBuffer)
-        val outputArray = Array(1) { FloatArray(numClasses) }
-
-        // Realizar la predicción
-        tflite.run(inputArray, outputArray)
-
-        // Obtener la clase con mayor probabilidad
-        val predictedLabel = indexOfMax(outputArray)
-        return mapLabel(predictedLabel)
+        return byteBuffer
     }
 
-    private fun indexOfMax(outputArray: Array<FloatArray>): Int {
+    private fun FloatArray.indexOfMax(): Int {
         var maxIndex = 0
-        var maxValue = outputArray[0][0]
-        for (i in outputArray[0].indices) {
-            if (outputArray[0][i] > maxValue) {
-                maxValue = outputArray[0][i]
+        for (i in 1 until size) {
+            if (this[i] > this[maxIndex]) {
                 maxIndex = i
             }
         }
         return maxIndex
     }
+}
 
-    private fun mapLabel(index: Int): String {
-        return when (index) {
-            0 -> "A"
-            1 -> "B"
-            2 -> "C"
-            3 -> "D"
-            4 -> "E"
-            5 -> "F"
-            6 -> "G"
-            7 -> "H"
-            8 -> "I"
-            9 -> "J"
-            10 -> "K"
-            11 -> "L"
-            12 -> "M"
-            13 -> "N"
-            14 -> "Ñ"
-            15 -> "O"
-            16 -> "P"
-            17 -> "Q"
-            18 -> "R"
-            19 -> "S"
-            20 -> "T"
-            21 -> "U"
-            22 -> "V"
-            23 -> "W"
-            24 -> "X"
-            25 -> "Y"
-            26 -> "Z"
-            27 -> "a"
-            28 -> "b"
-            29 -> "c"
-            30 -> "d"
-            31 -> "e"
-            32 -> "f"
-            33 -> "g"
-            34 -> "h"
-            35 -> "i"
-            36 -> "j"
-            37 -> "k"
-            38 -> "l"
-            39 -> "m"
-            40 -> "n"
-            41 -> "ñ"
-            42 -> "o"
-            43 -> "p"
-            44 -> "q"
-            45 -> "r"
-            46 -> "s"
-            47 -> "t"
-            48 -> "u"
-            49 -> "v"
-            50 -> "w"
-            51 -> "x"
-            52 -> "y"
-            53 -> "z"
-            else -> "Desconocido"
+@Composable
+fun SeleccionarImagenDeGaleriaOTomarFoto() {
+    var uriImagen by remember { mutableStateOf<Uri?>(null) }
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var letraDetectada by remember { mutableStateOf<String?>(null) }
+    val contexto = LocalContext.current
+
+    val lanzadorGaleria = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uriImagen = uri
+        if (uri != null) {
+            bitmap = if (Build.VERSION.SDK_INT < 28) {
+                MediaStore.Images.Media.getBitmap(contexto.contentResolver, uri)
+            } else {
+                val fuente = ImageDecoder.createSource(contexto.contentResolver, uri)
+                ImageDecoder.decodeBitmap(fuente)
+            }
         }
     }
 
-    private fun createTempImageUri(context: Context): Uri {
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.TITLE, "Nueva Foto")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+    val lanzadorCamara = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success && uriImagen != null) {
+            bitmap = if (Build.VERSION.SDK_INT < 28) {
+                MediaStore.Images.Media.getBitmap(contexto.contentResolver, uriImagen)
+            } else {
+                val fuente = ImageDecoder.createSource(contexto.contentResolver, uriImagen!!)
+                ImageDecoder.decodeBitmap(fuente)
+            }
         }
-        return context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
     }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        bitmap?.let { bmp ->
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(400.dp)
+                    .padding(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(onClick = { lanzadorGaleria.launch("image/*") }) {
+            Text(text = "Seleccionar Imagen")
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(onClick = {
+            uriImagen = createTempImageUri(contexto) // Crear URI temporal
+            lanzadorCamara.launch(uriImagen!!) // Lanzar la cámara
+        }) {
+            Text(text = "Tomar Foto")
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(onClick = {
+            bitmap?.let { bmp ->
+                val activity = contexto as SubirTomarFoto
+                val letraIndex = activity.detectarLetra(bmp) // Clasificar la imagen
+                letraDetectada = mapIndexToLetter(letraIndex) // Mapear el índice a la letra
+            }
+        }) {
+            Text(text = "Detectar")
+        }
+
+        letraDetectada?.let { letra ->
+            Text("Letra detectada: $letra")
+        }
+    }
+}
+
+// Función para mapear el índice de salida a letras
+private fun mapIndexToLetter(index: Int): String {
+    val letras = listOf(
+        "A", "a", "B", "b", "C", "c", "D", "d", "E", "e",
+        "F", "f", "G","g","H", "h", "I", "i", "J", "j", "K", "k",
+        "L", "l", "M", "m", "N", "n", "Ñ", "ñ", "O", "o",
+        "P", "p", "Q", "q", "R", "r", "S","s", "T", "t", "U",
+        "u", "V","v", "W", "w", "X", "x", "Y", "y", "Z", "z",
+    )
+
+    return if (index in letras.indices) letras[index] else "Desconocido"
+}
+
+// Función para crear una URI temporal para la imagen
+private fun createTempImageUri(context: Context): Uri {
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.TITLE, "Nueva Foto")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+    }
+    return context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
 }

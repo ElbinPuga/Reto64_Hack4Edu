@@ -1,6 +1,7 @@
 package com.elbin.alfabedu
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,7 +14,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +46,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Verifica el estado de onboarding completado
+        val sharedPref: SharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        val isOnboardingCompleted = sharedPref.getBoolean("isOnboardingCompleted", false)
+
+        // Si el onboarding ya está completado, inicia la actividad SubirTomarFoto
+        if (isOnboardingCompleted) {
+            val intent = Intent(this, SubirTomarFoto::class.java)
+            startActivity(intent)
+            finish() // Cierra MainActivity
+            return
+        }
+
         setContent {
             AlfabeduTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -90,6 +104,17 @@ class MainActivity : ComponentActivity() {
                     OnBoardingPager(
                         item = items,
                         pagerState = pagerState,
+                        onComplete = {
+                            // Al completar el onboarding, guardar el estado en SharedPreferences
+                            with(sharedPref.edit()) {
+                                putBoolean("isOnboardingCompleted", true)
+                                apply()
+                            }
+                            // Iniciar la actividad SubirTomarFoto
+                            val intent = Intent(this@MainActivity, SubirTomarFoto::class.java)
+                            startActivity(intent)
+                            finish()
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -98,13 +123,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-
-
 @OptIn(ExperimentalPagerApi::class)
 @Composable
 fun OnBoardingPager(
     item: List<OnBoardingData>,
     pagerState: PagerState,
+    onComplete: () -> Unit, // Parámetro para manejar la finalización del onboarding
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
@@ -180,7 +204,7 @@ fun OnBoardingPager(
                             TextButton(onClick = {
                                 GlobalScope.launch {
                                     pagerState.scrollToPage(
-                                        pagerState.currentPage+2,
+                                        pagerState.currentPage + 2,
                                         pageOffset = 0f
                                     )
                                 }
@@ -199,7 +223,7 @@ fun OnBoardingPager(
                                 onClick = {
                                     GlobalScope.launch {
                                         pagerState.scrollToPage(
-                                            pagerState.currentPage+1,
+                                            pagerState.currentPage + 1,
                                             pageOffset = 0f
                                         )
                                     }
@@ -221,11 +245,9 @@ fun OnBoardingPager(
                                 )
                             }
                         } else {
-                            val context = LocalContext.current
                             Button(
                                 onClick = {
-                                    val intent = Intent(context,SubirTomarFoto::class.java)
-                                    context.startActivity(intent)
+                                    onComplete() // Llama a la función para completar el onboarding
                                 },
                                 colors = ButtonDefaults.buttonColors(item[pagerState.currentPage].colorPrincipal),
                                 contentPadding = PaddingValues(vertical = 12.dp),
@@ -263,16 +285,11 @@ fun IndicadorPagina(items: List<OnBoardingData>, paginaActual: Int) {
 
 @Composable
 fun Indicador(siEsSeleccionado: Boolean, color: Color) {
-    val ancho = animateDpAsState(targetValue = if (siEsSeleccionado) 40.dp else 10.dp)
-
+    val tamaño = if (siEsSeleccionado) 20.dp else 12.dp
     Box(
         modifier = Modifier
-            .padding(4.dp)
-            .height(10.dp)
-            .width(ancho.value)
             .clip(CircleShape)
-            .background(
-                if (siEsSeleccionado) color else Color.Gray.copy(alpha = 0.5f)
-            )
+            .size(tamaño)
+            .background(color)
     )
 }
