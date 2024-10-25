@@ -1,5 +1,6 @@
 package com.elbin.alfabedu.ui.theme
-
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -12,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Button
@@ -31,6 +33,7 @@ import java.nio.ByteOrder
 
 class SubirTomarFoto : ComponentActivity() {
     private lateinit var tflite: Interpreter
+    private lateinit var tts: TextToSpeech
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +41,13 @@ class SubirTomarFoto : ComponentActivity() {
             SeleccionarImagenDeGaleriaOTomarFoto()
         }
         tflite = Interpreter(loadModelFile())
+
+        // Inicializar TTS en español
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts.language = Locale("es", "ES") // Cambiar a español de España
+            }
+        }
     }
 
     private fun loadModelFile(): ByteBuffer {
@@ -63,7 +73,6 @@ class SubirTomarFoto : ComponentActivity() {
         val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
         byteBuffer.order(ByteOrder.nativeOrder())
 
-        // Crear un bitmap mutable con configuración RGBA_F16
         val mutableBitmap = bitmap.copy(Bitmap.Config.RGBA_F16, true)
         val resizedBitmap = Bitmap.createScaledBitmap(mutableBitmap, inputSize, inputSize, true)
 
@@ -91,6 +100,20 @@ class SubirTomarFoto : ComponentActivity() {
             }
         }
         return maxIndex
+    }
+
+    // Función para hacer que TTS diga la letra en español
+    fun speak(letra: String) {
+        val texto = "La letra trazada es: $letra"
+        tts.speak(texto, TextToSpeech.QUEUE_FLUSH, null, null)
+    }
+
+    override fun onDestroy() {
+        if (::tts.isInitialized) {
+            tts.stop()
+            tts.shutdown()
+        }
+        super.onDestroy()
     }
 }
 
@@ -165,6 +188,9 @@ fun SeleccionarImagenDeGaleriaOTomarFoto() {
                 val activity = contexto as SubirTomarFoto
                 val letraIndex = activity.detectarLetra(bmp) // Clasificar la imagen
                 letraDetectada = mapIndexToLetter(letraIndex) // Mapear el índice a la letra
+
+                // Hacer que TTS diga la letra detectada
+                activity.speak(letraDetectada ?: "")
             }
         }) {
             Text(text = "Detectar")
