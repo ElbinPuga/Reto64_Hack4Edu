@@ -6,7 +6,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,18 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat.startActivity
 import com.elbin.alfabedu.ui.theme.AlfabeduTheme
 import com.elbin.alfabedu.ui.theme.ColorAmarillo
-import com.elbin.alfabedu.ui.theme.ColorAzul
 import com.elbin.alfabedu.ui.theme.ColorVerde
-import com.elbin.alfabedu.ui.theme.FuenteMontserrat
 import com.elbin.alfabedu.ui.theme.FuentePoppins
 import com.elbin.alfabedu.ui.theme.SubirTomarFoto
 import com.elbin.alfabedu.ui.theme.formaCardBotton
@@ -38,6 +33,7 @@ import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.PagerState
 import com.google.accompanist.pager.rememberPagerState
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
@@ -47,11 +43,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Verifica el estado de onboarding completado
+        // Verifico el estado de onboarding completado
         val sharedPref: SharedPreferences = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val isOnboardingCompleted = sharedPref.getBoolean("isOnboardingCompleted", false)
 
-        // Si el onboarding ya está completado, inicia la actividad SubirTomarFoto
+        // Si el onboarding ya está completado, s e inicia la actividad SubirTomarfoto
         if (isOnboardingCompleted) {
             val intent = Intent(this, SubirTomarFoto::class.java)
             startActivity(intent)
@@ -62,29 +58,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             AlfabeduTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    val items = ArrayList<OnBoardingData>()
-
-                    items.add(
+                    val items = listOf(
                         OnBoardingData(
                             R.drawable.pantalla1,
                             colorFondo = Color(0xFF008AC3),
                             colorPrincipal = Color(0xFF00B5EA),
                             textoPrincipal = "Aprende",
                             subTexto = "¡Diviértete con las letras!"
-                        )
-                    )
-
-                    items.add(
+                        ),
                         OnBoardingData(
                             R.drawable.nino_escribiendo_yellowbg,
                             colorFondo = Color(0xFFFAD206),
                             colorPrincipal = ColorAmarillo,
                             textoPrincipal = "Muestra tus dibujos",
                             subTexto = "Toma fotos de tus letras"
-                        )
-                    )
-
-                    items.add(
+                        ),
                         OnBoardingData(
                             R.drawable.ninos_saltando_bggreen,
                             colorFondo = Color(0xFF8DDD66),
@@ -105,12 +93,12 @@ class MainActivity : ComponentActivity() {
                         item = items,
                         pagerState = pagerState,
                         onComplete = {
-                            // Al completar el onboarding, guardar el estado en SharedPreferences
+                            // Al completar el onboarding, guardar el estado en sharedPreferences
                             with(sharedPref.edit()) {
                                 putBoolean("isOnboardingCompleted", true)
                                 apply()
                             }
-                            // Iniciar la actividad SubirTomarFoto
+                            // se inicia la actividad SubirTomarFoto para cpose
                             val intent = Intent(this@MainActivity, SubirTomarFoto::class.java)
                             startActivity(intent)
                             finish()
@@ -123,7 +111,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalPagerApi::class)
+@OptIn(ExperimentalPagerApi::class, DelicateCoroutinesApi::class)
 @Composable
 fun OnBoardingPager(
     item: List<OnBoardingData>,
@@ -247,7 +235,7 @@ fun OnBoardingPager(
                         } else {
                             Button(
                                 onClick = {
-                                    onComplete() // Llama a la función para completar el onboarding
+                                    onComplete() // se invoca la función para completar el onboarding
                                 },
                                 colors = ButtonDefaults.buttonColors(item[pagerState.currentPage].colorPrincipal),
                                 contentPadding = PaddingValues(vertical = 12.dp),
@@ -285,11 +273,14 @@ fun IndicadorPagina(items: List<OnBoardingData>, paginaActual: Int) {
 
 @Composable
 fun Indicador(siEsSeleccionado: Boolean, color: Color) {
-    val tamaño = if (siEsSeleccionado) 20.dp else 12.dp
+    val tamaño = if (siEsSeleccionado) 20.dp else 8.dp
     Box(
         modifier = Modifier
-            .clip(CircleShape)
+            .padding(3.dp)
             .size(tamaño)
+            .clip(CircleShape)
             .background(color)
     )
 }
+
+
